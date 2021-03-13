@@ -11,12 +11,14 @@ n_epochs = '1'
 
 iter = '0'
 
+
+#INITIALIZATION STEP
 #Make zero shot predictions 
 command = 'python3.6 prediction.py --iter ' + iter + ' --type zeroshot'
 print('Zero shot prediction:', command)
 os.system( command + ' > iteration' + iter + '/logs/prediction_zeroshot_log')
 
-#Split data
+#Select top N sentences using selection criteria and split data
 command = 'python3.6 datasplit.py --iter ' + iter + ' --positive ' + str(pos_ratio) + ' --negative ' + str(neg_ratio) + ' --neutral ' + str(neu_ratio)
 print('Split Data:', command)
 os.system(command + ' > iteration' + iter + '/logs/datasplit_logs')
@@ -31,18 +33,18 @@ for i in range(1, 15):
     print()
     print('Working on iteration ' + iter)
     
-    #FINE TUNE MODEL
+    #FINE TUNE MODEL (FINE TUNE BLOCK)
     command = 'python3.6 finetune.py --iter ' + iter + ' --n_epochs ' + n_epochs
     print('\nFine Tuning:', command)
     os.system(command + ' > iteration' + iter + '/logs/fine_tune_logs')
 
-    #MAKING PREDICTIONS FROM FINE TUNED MODEL
+    #MAKING PREDICTIONS FROM FINE TUNED MODEL (PREDICTION BLOCK)
     command = 'python3.6 prediction.py --iter ' + iter + ' --type load'
     print('\nLoaded prediction:', command)
     os.system( command + ' > iteration' + iter + '/logs/prediction_load_log')
     
     
-    #SPLIT DATA
+    #SELECT AND SPLIT DATA (SELECTION BLOCK)
     command = 'python3.6 datasplit.py --iter ' + iter + ' --positive ' + str(pos_ratio) + ' --negative ' + str(neg_ratio) + ' --neutral ' + str(neu_ratio)
     print('\nSplit Data:', command)
     os.system(command + ' > iteration' + iter + '/logs/datasplit_logs')
