@@ -4,6 +4,8 @@ The code contains the pipeline for Unsupervised Self Training.
 
 Run the main.py file to run the pipeline. The pipeline very closely resembles the pipeline described in the paper. The code is split into the following steps:
 
+0. Run initialize.sh to set up the directory to run the pipeline
+
 A. INITIALIZATION STEP
   1. Make zero shot predictions
   2. Select top N sentences using selection criteria and split data
