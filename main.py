@@ -20,9 +20,13 @@ if __name__ == '__main__':
     parser.add_argument('--num_iters', type=int, required=False, default=15, help='Enter number of fine tuning iters to run')
     parser.add_argument('--dataset_size', type=int, required=True, help='Enter the size of the finetune training set')
     parser.add_argument('--ratio', type=float, required=True, help='Enter percentage of data to be split for a class (like 0.02 for 2%)')
+    
+    # Args for ratio selection strategy
     parser.add_argument('--pro_pos', type=float, required=True, help='Enter the proportion of this class label to entire dataset (as percent) (like 0.02 for 2%)')
     parser.add_argument('--pro_neg', type=float, required=True, help='Enter the proportion of this class label to entire dataset (as percent) (like 0.02 for 2%)')
     parser.add_argument('--pro_neu', type=float, required=True, help='Enter the proportion of this class label to entire dataset (as percent) (like 0.02 for 2%)')
+    
+    # Args for vanilla selection strategy (to use vanilla, uncomment these lines and comment out the above lines)
     # parser.add_argument('--pos_ratio', type=float, required=True, help='Enter percentage of data to be split for a class (like 0.02 for 2%)')
     # parser.add_argument('--neg_ratio', type=float, required=True, help='Enter percentage of data to be split for a class (like 0.02 for 2%)')
     # parser.add_argument('--neu_ratio', type=float, required=True, help='Enter percentage of data to be split for a class (like 0.02 for 2%)')
@@ -43,12 +47,7 @@ if __name__ == '__main__':
     #---------------------
     # Selection ratio prep
     #---------------------
-
-    # (vanilla selection) Calculate # samples for each label
-    # pos_ratio = int(args.dataset_size * args.pos_ratio)
-    # neg_ratio = int(args.dataset_size * args.neg_ratio)
-    # neu_ratio = int(args.dataset_size * args.neu_ratio)
-
+    
     # (selection ratio, by dataset dist) Calculate # samples for each label
     batch_size = int(args.dataset_size * args.ratio * 3)
     print(f"batch_size:{batch_size}")
@@ -57,7 +56,10 @@ if __name__ == '__main__':
     neg_ratio = int(batch_size * args.pro_neg)
     neu_ratio = int(batch_size * args.pro_neu)
 
-    # # TODO: (Condition by zeroshot)
+    # (vanilla selection) Calculate # samples for each label. To use, uncomment these lines and comment out the above
+    # pos_ratio = int(args.dataset_size * args.pos_ratio)
+    # neg_ratio = int(args.dataset_size * args.neg_ratio)
+    # neu_ratio = int(args.dataset_size * args.neu_ratio)
 
     #---------------------
     # Run zeroshot and split
