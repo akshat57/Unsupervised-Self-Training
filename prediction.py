@@ -7,34 +7,33 @@
 #os.environ["CUDA_VISIBLE_DEVICES"]=gpu_id
 
 import os
+
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
-import pickle
-import numpy as np
 import argparse
-from transformers import pipeline
-import numpy as np
-import emoji
-from collections import Counter
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
-from torch.utils.data import TensorDataset, random_split
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import AdamW
-from transformers import get_linear_schedule_with_warmup
+import pickle
 import time
-import torch
+from collections import Counter
+from pathlib import Path
 
-print('Loaded all libraries')
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
+import emoji
+import numpy as np
+import torch
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
+                              TensorDataset, random_split)
+from transformers import (AdamW, AutoModelForSequenceClassification,
+                          AutoTokenizer, get_linear_schedule_with_warmup,
+                          pipeline)
+
+device = 0
 
 def save_data(filename, data):
     #Storing data with labels
     a_file = open(filename, "wb")
     pickle.dump(data, a_file)
     a_file.close()
-    
+
 
 def load_data(filename):
     a_file = open(filename, "rb")
@@ -79,22 +78,23 @@ def predict(sentences, labels, tweet_ids, classifier):
         pred_label_score.append((tweet_id, sentence, pred_label, label, pred[0]['score']))
 
         if i % 1000 == 0:
-            print('Finished processing {}/{} sentences'.format(i, len(sentences)))  
-        
-        
+            print('Finished processing {}/{} sentences'.format(i, len(sentences)))
+
+
     return pred_label_score
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Zeroshot on dataset')
+    parser.add_argument('--experiment_name', type=str, required=True, help='Enter name of experiment (used to name outputs)')
     parser.add_argument('--iter', type=str, required=True, help='Enter Iteration number')
     parser.add_argument('--type', type=str, required=True, help='Enter if prediction from zero shot or loaded model')
     args = parser.parse_args()
     print('Entered', args.iter)
-    
+
     #Read data
-    input_file = 'iteration' + args.iter + '/processed_data_' + args.iter + '.pkl'
+    input_file = f'{args.experiment_name}/iteration{args.iter}/processed_data_{args.iter}.pkl'
     print('Input File:', input_file)
     sentences, labels, tweet_ids = read_data(input_file)
     #sentences, labels = read_data(input_file)
@@ -103,20 +103,26 @@ if __name__ == '__main__':
     #Define classifier
     print()
     if args.type == 'zeroshot':
-        classifier = pipeline('sentiment-analysis', 'cardiffnlp/twitter-roberta-base-sentiment', device = 0)
-        #classifier = pipeline('sentiment-analysis', 'cardiffnlp/twitter-roberta-base-sentiment')
+        # if english pretrain, load the base model without pretraining
+        if args.experiment_name[:3] == "eng":
+            classifier = pipeline('sentiment-analysis', 'cardiffnlp/twitter-roberta-base-sentiment', device = 0)
+        else:
+            # if other languages, load the model we pretrained
+            model_path = list(Path(f"{args.experiment_name}/pretrain").glob(f"*.model"))[0] # get the only folder that has .model in its name (other models were deleted)
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            classifier = pipeline('sentiment-analysis', model=model, tokenizer=tokenizer, device = 0)
     else:
-        saved_model = 'iteration' + args.iter + '/saved_model'
+        saved_model = f'{args.experiment_name}/iteration{args.iter}/saved_model'
         print('Model Directory:', saved_model)
         tokenizer = AutoTokenizer.from_pretrained(saved_model)
         model = AutoModelForSequenceClassification.from_pretrained(saved_model)
         classifier = pipeline('sentiment-analysis', model=model, tokenizer=tokenizer, device = 0)
-    
+
     pred_label_score = predict(sentences, labels, tweet_ids, classifier)
     print()
 
-
     #Save results
-    output_file = 'iteration' + args.iter + '/iteration_' + args.iter + '.pkl'
+    output_file = f'{args.experiment_name}/iteration{args.iter}/iteration_{args.iter}.pkl'
     print('Output File:', output_file)
     save_data(output_file, pred_label_score)

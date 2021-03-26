@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
 
     ##make sure i > 0
-    for i in tqdm(range(1,args.num_iters+1), total=args.num_iters+1):
+    for i in tqdm(range(1,args.num_iters+1), total=args.num_iters):
         start = time.time()
 
         # write iter number at top of each entry
@@ -74,15 +74,15 @@ if __name__ == '__main__':
         print('Positive Accuracy:', positive_accuracy)
         f.write(f'Positive Accuracy:{i} : ' + str(positive_accuracy) + '\n')
 
-        negative_accuracy = np.array([pred_label == label for (_, sentence, pred_label, label, score) in data if label == 'negative'])
-        negative_accuracy = np.sum(negative_accuracy)/negative_accuracy.shape[0]
-        print(f'Negative Accuracy:', negative_accuracy)
-        f.write(f'Negative Accuracy:{i} : ' + str(negative_accuracy) + '\n')
+        positive_accuracy = np.array([pred_label == label for (_, sentence, pred_label, label, score) in data if label == 'negative'])
+        positive_accuracy = np.sum(positive_accuracy)/positive_accuracy.shape[0]
+        print(f'Negative Accuracy:', positive_accuracy)
+        f.write(f'Negative Accuracy:{i} : ' + str(positive_accuracy) + '\n')
 
-        neutral_accuracy = np.array([pred_label == label for (_, sentence, pred_label, label, score) in data if label == 'neutral'])
-        neutral_accuracy = np.sum(neutral_accuracy)/neutral_accuracy.shape[0]
-        print(f'Neutral Accuracy:', neutral_accuracy)
-        f.write(f'Neutral Accuracy:{i} : ' + str(neutral_accuracy) + '\n\n')
+        positive_accuracy = np.array([pred_label == label for (_, sentence, pred_label, label, score) in data if label == 'neutral'])
+        positive_accuracy = np.sum(positive_accuracy)/positive_accuracy.shape[0]
+        print(f'Neutral Accuracy:', positive_accuracy)
+        f.write(f'Neutral Accuracy:{i} : ' + str(positive_accuracy) + '\n\n')
         
         print('Time:', time.time() - start)
         

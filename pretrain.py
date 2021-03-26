@@ -1,22 +1,26 @@
-import os
-
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-
 import argparse
 import datetime
+import os
 import pdb
 import pickle
 import time
 from collections import Counter
+from tqdm import tqdm
 
 import numpy as np
 import torch
+from sklearn.metrics import classification_report, confusion_matrix
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset, random_split)
 from transformers import (AdamW, AutoModelForSequenceClassification,
-                          AutoTokenizer, get_linear_schedule_with_warmup)
+                          AutoTokenizer, RobertaForSequenceClassification,
+                          RobertaTokenizer, get_linear_schedule_with_warmup,
+                          pipeline)
 
+device = 0
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 def save_data(filename, data):
     #Storing data with labels
@@ -31,19 +35,7 @@ def load_data(filename):
     a_file.close()
     return output
 
-
 def read_data(input_file, label_dict):
-    data = load_data(input_file)
-
-    sentences, labels = [], []
-    
-    for (_, sentence, pred_label, label, score) in data:
-        sentences.append(sentence)
-        labels.append(label_dict[pred_label])
-
-    return sentences, labels
-
-def read_data_test(input_file, label_dict):
     data = load_data(input_file)
 
     sentences, labels = [], []
@@ -53,7 +45,6 @@ def read_data_test(input_file, label_dict):
         labels.append(label_dict[label])
 
     return sentences, labels
-
 
 def format_time(elapsed):
     '''
@@ -65,9 +56,8 @@ def format_time(elapsed):
     # Format as hh:mm:ss
     return str(datetime.timedelta(seconds=elapsed_rounded))
 
-
 def tokenize_text(tokeinzer, sentences, labels):
-
+    
     data_input_ids, data_attention_masks, output_labels = [], [], []
 
     #TODO: can this be optimized?
@@ -94,9 +84,8 @@ def tokenize_text(tokeinzer, sentences, labels):
 
     return data_input_ids, data_attention_masks, output_labels
 
-
 def create_loader(tokenizer, sentences, labels, batch_size):
-
+    
     input_ids, attention_masks, labels = tokenize_text(tokenizer, sentences, labels)
 
     dataset = TensorDataset(input_ids, attention_masks, labels)
@@ -115,9 +104,7 @@ def create_loader(tokenizer, sentences, labels, batch_size):
 
     return train_dataloader
 
-
 def train_epoch(train_dataloader, model, optimizer, scheduler):
-
     t0 = time.time()
     model.train()
     total_train_loss = 0
@@ -126,7 +113,6 @@ def train_epoch(train_dataloader, model, optimizer, scheduler):
     total = 0
 
     for step, batch in enumerate(train_dataloader):
-
         b_input_ids = batch[0].to(device)
         b_input_mask = batch[1].to(device)
         b_labels = batch[2].to(device)
@@ -147,28 +133,29 @@ def train_epoch(train_dataloader, model, optimizer, scheduler):
         optimizer.step()
         scheduler.step()
 
-        smax = torch.softmax(logits, dim = 1)
-        indices = torch.argmax(smax, dim = 1)
+        # smax = torch.softmax(logits, dim = 1)
+        # indices = torch.argmax(smax, dim = 1)
+        indices = torch.argmax(logits, dim = 1)
         correct += torch.sum(indices==b_labels).item()
         total += b_size
 
 
     avg_train_loss = total_train_loss / len(train_dataloader)  
     training_time = format_time(time.time() - t0)
-    print("")
-    print("  Average training loss: {0:.2f}".format(avg_train_loss))
-    print("  Training epcoh took: {:}".format(training_time))
+    f.write("")
+    f.write("  Average training loss: {0:.2f}".format(avg_train_loss))
+    f.write("  Training epoch took: {:}".format(training_time))
     val_accuracy = correct / total
-    print(" Training Accuracy: {0:.4f}".format(val_accuracy))
-    print('Time:', time.time() - t0)
+    f.write(" Training Accuracy: {0:.4f}".format(val_accuracy))
+    f.write(f' Time:{time.time() - t0}\n')
     
-
 def eval_epoch(validation_dataloader, model):
     t0 = time.time()
     model.eval()
-
     correct = 0
     total = 0
+    all_predictions = []
+    all_labels = []
 
     for i, batch in enumerate(validation_dataloader):
         b_input_ids = batch[0].to(device)
@@ -178,91 +165,114 @@ def eval_epoch(validation_dataloader, model):
 
         with torch.no_grad():
             outputs = model(b_input_ids, 
-                                   token_type_ids=None, 
-                                   attention_mask=b_input_mask,
-                                   labels=b_labels)
+                                token_type_ids=None, 
+                                attention_mask=b_input_mask,
+                                labels=b_labels)
             
-        loss = outputs.loss
         logits = outputs.logits
-        smax = torch.softmax(logits, dim = 1)
-        indices = torch.argmax(smax, dim = 1)
+        # smax = torch.softmax(logits, dim = 1)
+        # indices = torch.argmax(smax, dim = 1)
+        indices = torch.argmax(logits, dim = 1)
 
         correct += torch.sum(indices==b_labels).item()
         total += b_size
 
+        #saving
+        all_predictions += list(indices.cpu().numpy())
+        all_labels += list(b_labels.cpu().numpy())
+
+    try:
+        f.write(classification_report(all_labels, all_predictions, target_names=['negative', 'positive'], digits = 5))
+    except:
+        f.write(classification_report(all_labels, all_predictions, target_names=['negative', 'neutral', 'positive'], digits = 5))
     val_accuracy = correct / total
-    print(" Validation Accuracy: {0:.4f}".format(val_accuracy))
-    print('Time:', time.time() - t0)
     
-    
-    
+    return val_accuracy
+
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Fine Tuning')
-    parser.add_argument('--experiment_name', type=str, required=True, help='Enter name of experiment (used to name outputs)')
-    parser.add_argument('--iter', type=int, required=True, help='Enter Iteration number')
-    parser.add_argument('--n_epochs', type=int, required=True, help='Enter number of epochs')
+    parser = argparse.ArgumentParser(description='Supervised pretraining (based on EACLsentiment2021.ipynb)')
+    parser.add_argument('--experiment_name', type=str, required=True, help='Enter name of experiment (used to name output file)')
+    parser.add_argument('--num_epochs', type=int, required=True, help='Enter num epochs of supervised training')
+    parser.add_argument('--pretrain_data', type=str, required=True, help='Enter path to pretrain data file')
+    parser.add_argument('--predev_data', type=str, required=True, help='Enter path to pretrain data file')
+    parser.add_argument('--pretest_data', type=str, required=True, help='Enter path to test data file')
+
     args = parser.parse_args()
-    print('Entered', args.iter)
     
-    device = 0
-    if args.iter == 1:
-        tokenizer = AutoTokenizer.from_pretrained("cardiffnlp/twitter-roberta-base-sentiment")
-        model = AutoModelForSequenceClassification.from_pretrained("cardiffnlp/twitter-roberta-base-sentiment")
-        model = model.to(device)
-    else:
-        load_model_location = f'{args.experiment_name}/iteration{args.iter-1}/saved_model'
-        tokenizer = AutoTokenizer.from_pretrained(load_model_location)
-        model = AutoModelForSequenceClassification.from_pretrained(load_model_location)
-        model = model.to(device)
-    print('Loaded model and shifted to device', device)
+    # make folder to store pretrained model and tokenizer
+    os.makedirs(f'{args.experiment_name}/pretrain', exist_ok=True)
+    os.makedirs(f'{args.experiment_name}/check', exist_ok=True)
+    f = open(f"{args.experiment_name}/check/pretrain_log_{args.experiment_name}.txt", "a")
     
-    #load data for fine tuning
-    current_dir = f'{args.experiment_name}/iteration{args.iter}/'
-    fine_tune_file = current_dir + f'fine_tune_{args.iter}.pkl'
-    print('Fine Tune File:', fine_tune_file)
+    tokenizer = AutoTokenizer.from_pretrained("cardiffnlp/twitter-roberta-base-sentiment")
+    model = AutoModelForSequenceClassification.from_pretrained("cardiffnlp/twitter-roberta-base-sentiment")
+    model = model.to(device)
+    
+    f.write(f"Pretraining {args.experiment_name} for {args.num_epochs} epochs\n")
+    print(f"Pretraining {args.experiment_name} for {args.num_epochs} epochs")
+    
     label_dict = {'positive': 2, 'neutral': 1, 'negative': 0}
-    sentences, labels = read_data(fine_tune_file, label_dict)
-   
-    label_distribution = Counter(labels)
-    print('Train Label Distribution:')
-    print(label_distribution)
+    #sentences, labels = read_data('sentiment__train.pkl', label_dict)
+    sentences, labels = read_data(args.pretrain_data, label_dict)
 
-
-    #dataloader
+    #for multilingual training
+    # '''sentences2, labels2 = read_data('sentiment_tamil_train.pkl', label_dict)
+    # print(len(sentences))
+    # sentences += sentences2[:1000]
+    # labels += labels2[:1000]
+    # print(len(sentences))
+    # '''
+    # print(Counter(labels))
+    
     batch_size = 16
-    num_epochs = args.n_epochs
     train_dataloader = create_loader(tokenizer, sentences, labels, batch_size)
-    print('Train Loader:', len(train_dataloader))
-
+    
     optimizer = AdamW(model.parameters(),
                   lr = 2e-5, # args.learning_rate - default is 5e-5, our notebook had 2e-5
                   eps = 1e-8 # args.adam_epsilon  - default is 1e-8.
                 )
-    total_steps = len(train_dataloader) * num_epochs
+    total_steps = len(train_dataloader) * args.num_epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, 
-                                            num_warmup_steps = 0, # Default value in run_glue.py
-                                            num_training_steps = total_steps)
+                                                num_warmup_steps = 0, # Default value in run_glue.py
+                                                num_training_steps = total_steps)
     
-    
-    #load data for testing
-    val_file = current_dir + f'processed_data_{args.iter}.pkl'
-    print('Validation File:', val_file)
-    sentences, labels = read_data_test(val_file , label_dict)
-    label_distribution = Counter(labels)
-    print('Validation Label Distribution:')
-    print(label_distribution)
-
     batch_size = 128
+    sentences, labels = read_data(args.predev_data, label_dict)
     val_dataloader = create_loader(tokenizer, sentences, labels, batch_size)
-    print('Validation Loader:', len(val_dataloader))
 
-    #fine tuning loop
-    for i in range(num_epochs):
+    #for multilingual
+    # '''sentences, labels = read_data('sentiment_tamil_dev.pkl', label_dict)
+    # val_dataloader2 = create_loader(tokenizer, sentences, labels, batch_size)'''
+    
+    #eval_epoch(val_dataloader, model)
+    #print('End Zero Shot')
+    val_accuracies = []
+    for i in tqdm(range(1, args.num_epochs+1), total=args.num_epochs):
+        f.write(f"Epoch #{i}\n")
         train_epoch(train_dataloader, model, optimizer, scheduler)
-        eval_epoch(val_dataloader, model)
+        val_accuracy = eval_epoch(val_dataloader, model)
+        val_accuracies.append(val_accuracy)
         
-    print ("\tSaving model at epoch: {}\t".format(i))
-    save_directory = current_dir + 'saved_model'
-    os.makedirs(save_directory, exist_ok=True)
+    sentences, labels = read_data(args.pretest_data, label_dict)
+    test_dataloader2 = create_loader(tokenizer, sentences, labels, batch_size)
+    eval_epoch(test_dataloader2, model)
+
+    print(f"Finished pretraining, epoch val accuracies: {val_accuracies}")
+    f.write(f"Finished pretraining, epoch val accuracies: {val_accuracies}\n")
+    
+    # Save model
+    save_directory = f'{args.experiment_name}/pretrain/{args.experiment_name}_epoch_{i}.model'
+    #os.makedirs(save_directory, exist_ok=True)
+    print(f"\tSaving pretrained model at epoch: {i}\t")
+    f.write(f"\tSaving pretrained model at epoch: {i}\t\n")
     tokenizer.save_pretrained(save_directory)
     model.save_pretrained(save_directory)
+    
+    # print(f"Deleting other epoch models")
+    # # delete models that aren't from best epoch
+    # for i in range(1, args.num_epochs+1):
+    #     if i == best_epoch:
+    #         continue
+    #     os.system(f"rm -r pretrain/{args.experiment_name}_epoch_{i}.model")
