@@ -9,7 +9,7 @@ The code contains the pipeline for Unsupervised Self Training for code switched 
 The pipeline is as described in the paper. It can be run using `run_experiments.ipynb`.
 
 1. Pretrains with `pretrain.py` (if needed; only needed for non-english pretraining).
-2. Finetunes with `main.py` exactly as described in the paper.
+2. Finetunes with `main.py`.
     - Makes zero shot predictions with given model.
     - Selects top N sentences using selection criteria.
     - Runs specified # of fine tuning iterations.
